@@ -1,0 +1,13 @@
+homeassistant:
+  url: "http://homeassistant.local:8123"
+  token: "YOUR_LONG_LIVED_ACCESS_TOKEN"
+  entities:
+    total_power_w: "sensor.power_hem"
+    total_pf: "sensor.tibber_effektfaktor"
+    total_import_kwh: "sensor.last_meter_consumption_hem"
+    l1_v: "sensor.tibber_spanning_fas1"
+    l2_v: "sensor.tibber_spanning_fas2"
+    l3_v: "sensor.tibber_spanning_fas3"
+    l1_a: "sensor.tibber_strom_fas1"
+    l2_a: "sensor.tibber_strom_fas2"
+    l3_a: "sensor.tibber_strom_fas3"

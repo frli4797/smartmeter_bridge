@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.git
+.gitignore
+.venv
+env/
+venv/
+homeassistant.yaml
+modbus_snoop.py~

@@ -6,6 +6,8 @@ import signal
 import sys
 import threading
 import time
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Optional
 
 import requests
@@ -16,24 +18,87 @@ from pymodbus.datastore import (
 )
 from pymodbus.server import StartTcpServer
 
+try:
+    import yaml
+except ImportError as exc:
+    print("Missing dependency: PyYAML. Install it with 'pip install pyyaml'.", file=sys.stderr)
+    raise SystemExit(1) from exc
+
 LOG = logging.getLogger("ha_em420")
 
 
-# ----------------------------
-# Home Assistant entity mapping
-# ----------------------------
+DEFAULT_CONFIG_PATH = Path("homeassistant.yaml")
 
-ENTITY_TOTAL_POWER_W = "sensor.power_hem"
-ENTITY_TOTAL_PF = "sensor.tibber_effektfaktor"
-ENTITY_TOTAL_IMPORT_KWH = "sensor.last_meter_consumption_hem"
 
-ENTITY_L1_V = "sensor.tibber_spanning_fas1"
-ENTITY_L2_V = "sensor.tibber_spanning_fas2"
-ENTITY_L3_V = "sensor.tibber_spanning_fas3"
+@dataclass(frozen=True)
+class HomeAssistantEntities:
+    total_power_w: str
+    total_pf: str
+    total_import_kwh: str
+    l1_v: str
+    l2_v: str
+    l3_v: str
+    l1_a: str
+    l2_a: str
+    l3_a: str
 
-ENTITY_L1_A = "sensor.tibber_strom_fas1"
-ENTITY_L2_A = "sensor.tibber_strom_fas2"
-ENTITY_L3_A = "sensor.tibber_strom_fas3"
+
+@dataclass(frozen=True)
+class HomeAssistantConfig:
+    url: str
+    token: str
+    entities: HomeAssistantEntities
+
+
+def load_homeassistant_config(path: Path) -> HomeAssistantConfig:
+    try:
+        with path.open("r", encoding="utf-8") as config_file:
+            raw_config = yaml.safe_load(config_file) or {}
+    except FileNotFoundError as exc:
+        raise ValueError(f"Config file not found: {path}") from exc
+    except yaml.YAMLError as exc:
+        raise ValueError(f"Invalid YAML in config file {path}: {exc}") from exc
+
+    homeassistant = raw_config.get("homeassistant")
+    if not isinstance(homeassistant, dict):
+        raise ValueError(f"Config file {path} must contain a 'homeassistant' mapping")
+
+    entities = homeassistant.get("entities")
+    if not isinstance(entities, dict):
+        raise ValueError(
+            f"Config file {path} must contain a 'homeassistant.entities' mapping"
+        )
+
+    required_entity_keys = (
+        "total_power_w",
+        "total_pf",
+        "total_import_kwh",
+        "l1_v",
+        "l2_v",
+        "l3_v",
+        "l1_a",
+        "l2_a",
+        "l3_a",
+    )
+    missing_entity_keys = [
+        key for key in required_entity_keys if not isinstance(entities.get(key), str) or not entities[key]
+    ]
+    if missing_entity_keys:
+        missing = ", ".join(missing_entity_keys)
+        raise ValueError(f"Missing or invalid Home Assistant entity ids in {path}: {missing}")
+
+    url = homeassistant.get("url")
+    token = homeassistant.get("token")
+    if not isinstance(url, str) or not url:
+        raise ValueError(f"Missing or invalid homeassistant.url in {path}")
+    if not isinstance(token, str) or not token:
+        raise ValueError(f"Missing or invalid homeassistant.token in {path}")
+
+    return HomeAssistantConfig(
+        url=url,
+        token=token,
+        entities=HomeAssistantEntities(**{key: entities[key] for key in required_entity_keys}),
+    )
 
 
 # ----------------------------
@@ -199,20 +264,21 @@ def distribute_total_energy_wh(
 def update_em420_registers_from_ha(
     hr_block: LoggingBlock,
     ha: HomeAssistantClient,
+    entities: HomeAssistantEntities,
     frequency_hz: float = 50.0,
     use_phase_sum_for_total_power: bool = False,
 ) -> None:
-    total_power_w = ha.get_float(ENTITY_TOTAL_POWER_W, 0.0) or 0.0
-    total_pf_raw = ha.get_float(ENTITY_TOTAL_PF, 1.0) or 1.0
-    total_import_kwh = ha.get_float(ENTITY_TOTAL_IMPORT_KWH, 0.0) or 0.0
+    total_power_w = ha.get_float(entities.total_power_w, 0.0) or 0.0
+    total_pf_raw = ha.get_float(entities.total_pf, 1.0) or 1.0
+    total_import_kwh = ha.get_float(entities.total_import_kwh, 0.0) or 0.0
 
-    l1_v = ha.get_float(ENTITY_L1_V, 230.0) or 230.0
-    l2_v = ha.get_float(ENTITY_L2_V, 230.0) or 230.0
-    l3_v = ha.get_float(ENTITY_L3_V, 230.0) or 230.0
+    l1_v = ha.get_float(entities.l1_v, 230.0) or 230.0
+    l2_v = ha.get_float(entities.l2_v, 230.0) or 230.0
+    l3_v = ha.get_float(entities.l3_v, 230.0) or 230.0
 
-    l1_a = ha.get_float(ENTITY_L1_A, 0.0) or 0.0
-    l2_a = ha.get_float(ENTITY_L2_A, 0.0) or 0.0
-    l3_a = ha.get_float(ENTITY_L3_A, 0.0) or 0.0
+    l1_a = ha.get_float(entities.l1_a, 0.0) or 0.0
+    l2_a = ha.get_float(entities.l2_a, 0.0) or 0.0
+    l3_a = ha.get_float(entities.l3_a, 0.0) or 0.0
 
     total_pf = normalize_pf(total_pf_raw)
 
@@ -310,6 +376,7 @@ def update_em420_registers_from_ha(
 def updater_loop(
     hr_block: LoggingBlock,
     ha: HomeAssistantClient,
+    entities: HomeAssistantEntities,
     interval_s: float,
     frequency_hz: float,
     use_phase_sum_for_total_power: bool,
@@ -319,6 +386,7 @@ def updater_loop(
             update_em420_registers_from_ha(
                 hr_block=hr_block,
                 ha=ha,
+                entities=entities,
                 frequency_hz=frequency_hz,
                 use_phase_sum_for_total_power=use_phase_sum_for_total_power,
             )
@@ -338,14 +406,19 @@ def main() -> None:
     parser.add_argument("--host", default="0.0.0.0", help="Bind address")
     parser.add_argument("--port", type=int, default=5020, help="Modbus TCP port")
     parser.add_argument(
+        "--config",
+        default=str(DEFAULT_CONFIG_PATH),
+        help="Path to YAML config file with Home Assistant settings and entity IDs",
+    )
+    parser.add_argument(
         "--ha-url",
-        default=os.getenv("HA_URL", "http://homeassistant.local:8123"),
-        help="Home Assistant base URL",
+        default=os.getenv("HA_URL"),
+        help="Override Home Assistant base URL from config",
     )
     parser.add_argument(
         "--ha-token",
         default=os.getenv("HA_TOKEN"),
-        help="Home Assistant long-lived access token",
+        help="Override Home Assistant long-lived access token from config",
     )
     parser.add_argument(
         "--poll-interval",
@@ -373,11 +446,22 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
 
-    if not args.ha_token:
-        print("Missing Home Assistant token. Set --ha-token or HA_TOKEN.", file=sys.stderr)
+    try:
+        ha_config = load_homeassistant_config(Path(args.config))
+    except ValueError as exc:
+        print(exc, file=sys.stderr)
         sys.exit(1)
 
-    ha = HomeAssistantClient(base_url=args.ha_url, token=args.ha_token)
+    ha_url = args.ha_url or ha_config.url
+    ha_token = args.ha_token or ha_config.token
+    if not ha_token:
+        print(
+            "Missing Home Assistant token. Set it in the YAML config or pass --ha-token / HA_TOKEN.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    ha = HomeAssistantClient(base_url=ha_url, token=ha_token)
 
     hr_values = allocate_registers(2000)
     hr_block = LoggingBlock("HR", 0, hr_values, log_reads=args.log_reads)
@@ -389,6 +473,7 @@ def main() -> None:
         args=(
             hr_block,
             ha,
+            ha_config.entities,
             args.poll_interval,
             args.grid_frequency,
             args.use_phase_sum_for_total_power,
@@ -407,7 +492,7 @@ def main() -> None:
     signal.signal(signal.SIGINT, _handle_signal)
     signal.signal(signal.SIGTERM, _handle_signal)
 
-    LOG.info("Starting fake EM420 on %s:%s using HA at %s", args.host, args.port, args.ha_url)
+    LOG.info("Starting fake EM420 on %s:%s using HA at %s", args.host, args.port, ha_url)
     StartTcpServer(context=context, address=(args.host, args.port))
 
 
