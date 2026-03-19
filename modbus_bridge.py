@@ -3,6 +3,7 @@ import argparse
 import hashlib
 import json
 import logging
+import math
 import os
 import signal
 import sys
@@ -32,6 +33,26 @@ except ImportError as exc:
     raise SystemExit(1) from exc
 
 LOG = logging.getLogger("ha_em420")
+
+
+class JsonFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        payload = {
+            "timestamp": self.formatTime(record, self.datefmt),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        event_fields = getattr(record, "event_fields", None)
+        if isinstance(event_fields, dict):
+            payload.update(event_fields)
+        if record.exc_info:
+            payload["exception"] = self.formatException(record.exc_info)
+        return json.dumps(payload, sort_keys=True)
+
+
+def log_event(level: int, message: str, **fields: Any) -> None:
+    LOG.log(level, message, extra={"event_fields": fields})
 
 
 DEFAULT_CONFIG_PATH = Path("homeassistant.yaml")
@@ -64,6 +85,11 @@ class HealthState:
         with self.lock:
             self.status = "error"
             self.last_error = error
+            self._write_locked()
+
+    def mark_stopping(self) -> None:
+        with self.lock:
+            self.status = "stopping"
             self._write_locked()
 
     def _write_locked(self) -> None:
@@ -308,7 +334,14 @@ class LoggingBlock(ModbusSequentialDataBlock):
 
     def getValues(self, address, count=1):
         if self.log_reads:
-            LOG.info("%s read: address=%s count=%s", self.name, address, count)
+            log_event(
+                logging.INFO,
+                "Modbus read",
+                event="modbus_read",
+                block=self.name,
+                address=address,
+                count=count,
+            )
         return super().getValues(address, count)
 
 
@@ -329,6 +362,9 @@ class HomeAssistantClient:
                 "User-Agent": f"smartmeter-faker/{APP_VERSION}",
             }
         )
+
+    def close(self) -> None:
+        self.session.close()
 
     def _get(self, path: str) -> requests.Response:
         url = f"{self.base_url}{path}"
@@ -381,13 +417,55 @@ class HomeAssistantClient:
         data = self.get_state(entity_id)
         state = data.get("state")
         if state in (None, "", "unknown", "unavailable"):
-            LOG.warning("Entity %s returned state=%r; using default=%r", entity_id, state, default)
+            log_event(
+                logging.WARNING,
+                "Entity returned unavailable state",
+                event="ha_entity_defaulted",
+                entity_id=entity_id,
+                state=state,
+                default=default,
+            )
             return default
         try:
             return float(str(state).replace(",", "."))
         except ValueError:
-            LOG.warning("Entity %s returned non-numeric state=%r; using default=%r", entity_id, state, default)
+            log_event(
+                logging.WARNING,
+                "Entity returned non-numeric state",
+                event="ha_entity_defaulted",
+                entity_id=entity_id,
+                state=state,
+                default=default,
+            )
             return default
+
+
+class PollReporter:
+    def __init__(self, info_interval_s: float = 60.0):
+        self.info_interval_s = info_interval_s
+        self.last_info_at = 0.0
+        self.success_count = 0
+
+    def log_success(self, **fields: Any) -> None:
+        now = time.time()
+        self.success_count += 1
+        log_event(
+            logging.DEBUG,
+            "Home Assistant poll succeeded",
+            event="ha_poll_success",
+            success_count=self.success_count,
+            **fields,
+        )
+        if now - self.last_info_at >= self.info_interval_s:
+            self.last_info_at = now
+            log_event(
+                logging.INFO,
+                "Home Assistant polling healthy",
+                event="ha_poll_heartbeat",
+                success_count=self.success_count,
+                total_power_w=fields["total_power_w"],
+                total_import_wh=fields["total_import_wh"],
+            )
 
 
 # ----------------------------
@@ -459,6 +537,7 @@ def update_em420_registers_from_ha(
     hr_block: LoggingBlock,
     ha: HomeAssistantClient,
     entities: HomeAssistantEntities,
+    reporter: PollReporter,
     frequency_hz: float = 50.0,
     use_phase_sum_for_total_power: bool = False,
 ) -> None:
@@ -546,25 +625,26 @@ def update_em420_registers_from_ha(
     set_u64_block(hr_block, 672, int(round(l2_import_wh * 10)))
     set_u64_block(hr_block, 752, int(round(l3_import_wh * 10)))
 
-    LOG.info(
-        "Updated from HA: total=%.1fW pf=%.3f "
-        "L1=%.1fW %.3fA %.1fV "
-        "L2=%.1fW %.3fA %.1fV "
-        "L3=%.1fW %.3fA %.1fV "
-        "total_import=%.1fWh",
-        total_power_w,
-        total_pf,
-        l1_power_w,
-        l1_a,
-        l1_v,
-        l2_power_w,
-        l2_a,
-        l2_v,
-        l3_power_w,
-        l3_a,
-        l3_v,
-        total_import_wh,
+    reporter.log_success(
+        total_power_w=round(total_power_w, 3),
+        total_pf=round(total_pf, 6),
+        l1_power_w=round(l1_power_w, 3),
+        l1_a=round(l1_a, 6),
+        l1_v=round(l1_v, 6),
+        l2_power_w=round(l2_power_w, 3),
+        l2_a=round(l2_a, 6),
+        l2_v=round(l2_v, 6),
+        l3_power_w=round(l3_power_w, 3),
+        l3_a=round(l3_a, 6),
+        l3_v=round(l3_v, 6),
+        total_import_wh=round(total_import_wh, 3),
     )
+
+
+def calculate_backoff_delay(base_interval_s: float, consecutive_failures: int, max_interval_s: float) -> float:
+    if consecutive_failures <= 0:
+        return base_interval_s
+    return min(base_interval_s * math.pow(2, consecutive_failures - 1), max_interval_s)
 
 
 def updater_loop(
@@ -572,41 +652,77 @@ def updater_loop(
     ha: HomeAssistantClient,
     entities: HomeAssistantEntities,
     health_state: HealthState,
+    reporter: PollReporter,
+    stop_event: threading.Event,
     interval_s: float,
     frequency_hz: float,
     use_phase_sum_for_total_power: bool,
+    max_backoff_s: float,
 ) -> None:
     consecutive_failures = 0
-    while True:
+    while not stop_event.is_set():
+        next_delay = interval_s
         try:
             update_em420_registers_from_ha(
                 hr_block=hr_block,
                 ha=ha,
                 entities=entities,
+                reporter=reporter,
                 frequency_hz=frequency_hz,
                 use_phase_sum_for_total_power=use_phase_sum_for_total_power,
             )
             if consecutive_failures:
-                LOG.info("Recovered Home Assistant polling after %s consecutive failures", consecutive_failures)
+                log_event(
+                    logging.INFO,
+                    "Recovered Home Assistant polling",
+                    event="ha_poll_recovered",
+                    consecutive_failures=consecutive_failures,
+                )
             consecutive_failures = 0
             health_state.mark_success()
         except HomeAssistantAuthError as exc:
             consecutive_failures += 1
             health_state.mark_error(str(exc))
-            LOG.error(
-                "Home Assistant authorization failed (token fingerprint=%s): %s",
-                ha.token_fingerprint,
-                exc,
+            next_delay = calculate_backoff_delay(interval_s, consecutive_failures, max_backoff_s)
+            log_event(
+                logging.ERROR,
+                "Home Assistant authorization failed",
+                event="ha_poll_failure",
+                failure_type="authorization",
+                consecutive_failures=consecutive_failures,
+                retry_delay_s=round(next_delay, 3),
+                token_fingerprint=ha.token_fingerprint,
+                error=str(exc),
             )
         except HomeAssistantError as exc:
             consecutive_failures += 1
             health_state.mark_error(str(exc))
-            LOG.warning("Home Assistant update failed (%s consecutive failures): %s", consecutive_failures, exc)
+            next_delay = calculate_backoff_delay(interval_s, consecutive_failures, max_backoff_s)
+            log_event(
+                logging.WARNING,
+                "Home Assistant update failed",
+                event="ha_poll_failure",
+                failure_type=type(exc).__name__,
+                consecutive_failures=consecutive_failures,
+                retry_delay_s=round(next_delay, 3),
+                error=str(exc),
+            )
         except Exception as exc:
             consecutive_failures += 1
             health_state.mark_error(str(exc))
-            LOG.exception("Updater failed unexpectedly after %s consecutive failures: %s", consecutive_failures, exc)
-        time.sleep(interval_s)
+            next_delay = calculate_backoff_delay(interval_s, consecutive_failures, max_backoff_s)
+            LOG.exception(
+                "Updater failed unexpectedly",
+                extra={
+                    "event_fields": {
+                        "event": "ha_poll_failure",
+                        "failure_type": type(exc).__name__,
+                        "consecutive_failures": consecutive_failures,
+                        "retry_delay_s": round(next_delay, 3),
+                    }
+                },
+            )
+        stop_event.wait(next_delay)
 
 
 # ----------------------------
@@ -663,11 +779,20 @@ def main() -> None:
         default=str(DEFAULT_HEALTH_PATH),
         help="Path to the JSON health status file used by container health checks",
     )
+    parser.add_argument(
+        "--max-backoff",
+        type=float,
+        default=30.0,
+        help="Maximum retry delay in seconds after Home Assistant polling failures",
+    )
     args = parser.parse_args()
 
+    handler = logging.StreamHandler()
+    handler.setFormatter(JsonFormatter())
     logging.basicConfig(
         level=logging.DEBUG if args.debug else logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        handlers=[handler],
+        force=True,
     )
 
     try:
@@ -702,6 +827,8 @@ def main() -> None:
 
     health_state = HealthState(Path(args.health_path), APP_VERSION)
     health_state.mark_starting()
+    reporter = PollReporter()
+    stop_event = threading.Event()
 
     hr_values = allocate_registers(2000)
     hr_block = LoggingBlock("HR", 0, hr_values, log_reads=args.log_reads)
@@ -715,9 +842,12 @@ def main() -> None:
             ha,
             ha_config.entities,
             health_state,
+            reporter,
+            stop_event,
             args.poll_interval,
             args.grid_frequency,
             args.use_phase_sum_for_total_power,
+            args.max_backoff,
         ),
         daemon=True,
     )
@@ -727,25 +857,55 @@ def main() -> None:
     context = ModbusServerContext(devices={1: store}, single=False)
 
     def _handle_signal(signum, frame):
-        LOG.info("Received signal %s, shutting down", signum)
-        sys.exit(0)
+        signal_name = signal.Signals(signum).name
+        log_event(
+            logging.INFO,
+            "Shutdown signal received",
+            event="server_signal",
+            signal=signal_name,
+        )
+        stop_event.set()
+        raise KeyboardInterrupt
 
     signal.signal(signal.SIGINT, _handle_signal)
     signal.signal(signal.SIGTERM, _handle_signal)
 
-    LOG.info(
-        "Starting fake EM420 version=%s on %s:%s using HA at %s",
-        APP_VERSION,
-        args.host,
-        args.port,
-        ha_url,
+    log_event(
+        logging.INFO,
+        "Starting Modbus bridge",
+        event="server_starting",
+        version=APP_VERSION,
+        host=args.host,
+        port=args.port,
+        ha_url=ha_url,
+        poll_interval_s=args.poll_interval,
+        max_backoff_s=args.max_backoff,
     )
-    LOG.info(
-        "Home Assistant configuration source=%s token_fingerprint=%s",
-        ha_config.source,
-        ha.token_fingerprint,
+    log_event(
+        logging.INFO,
+        "Home Assistant configuration loaded",
+        event="ha_config_loaded",
+        config_source=ha_config.source,
+        token_fingerprint=ha.token_fingerprint,
     )
-    StartTcpServer(context=context, address=(args.host, args.port))
+    try:
+        StartTcpServer(context=context, address=(args.host, args.port))
+    except KeyboardInterrupt:
+        log_event(
+            logging.INFO,
+            "Modbus bridge shutdown requested",
+            event="server_stopping",
+        )
+    finally:
+        stop_event.set()
+        health_state.mark_stopping()
+        ha.close()
+        updater.join(timeout=min(args.max_backoff, 5.0) + 1.0)
+        log_event(
+            logging.INFO,
+            "Modbus bridge stopped",
+            event="server_stopped",
+        )
 
 
 if __name__ == "__main__":

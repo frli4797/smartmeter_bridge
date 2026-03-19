@@ -27,6 +27,8 @@ Build the container locally with `docker build -t smartmeter-faker .`.
 
 The image includes a Docker `HEALTHCHECK` that reports unhealthy if the bridge has not completed a successful Home Assistant refresh within the configured age window. The application also logs its version on startup, and `python3 modbus_bridge.py --version` prints the current version string.
 
+Runtime logs are emitted as JSON and include structured events for Home Assistant poll success/failure, Modbus reads, and server lifecycle. Home Assistant polling now uses exponential backoff after failures, capped by `--max-backoff`.
+
 Run it directly with environment variables:
 
 ```sh
