@@ -97,7 +97,32 @@ class HomeAssistantConfig:
     entities: HomeAssistantEntities
 
 
-def load_homeassistant_config(path: Path) -> HomeAssistantConfig:
+REQUIRED_ENTITY_KEYS = (
+    "total_power_w",
+    "total_pf",
+    "total_import_kwh",
+    "l1_v",
+    "l2_v",
+    "l3_v",
+    "l1_a",
+    "l2_a",
+    "l3_a",
+)
+
+ENTITY_ENV_VARS = {
+    "total_power_w": "HA_ENTITY_TOTAL_POWER_W",
+    "total_pf": "HA_ENTITY_TOTAL_PF",
+    "total_import_kwh": "HA_ENTITY_TOTAL_IMPORT_KWH",
+    "l1_v": "HA_ENTITY_L1_V",
+    "l2_v": "HA_ENTITY_L2_V",
+    "l3_v": "HA_ENTITY_L3_V",
+    "l1_a": "HA_ENTITY_L1_A",
+    "l2_a": "HA_ENTITY_L2_A",
+    "l3_a": "HA_ENTITY_L3_A",
+}
+
+
+def load_homeassistant_config_from_yaml(path: Path) -> HomeAssistantConfig:
     try:
         with path.open("r", encoding="utf-8") as config_file:
             raw_config = yaml.safe_load(config_file) or {}
@@ -116,19 +141,8 @@ def load_homeassistant_config(path: Path) -> HomeAssistantConfig:
             f"Config file {path} must contain a 'homeassistant.entities' mapping"
         )
 
-    required_entity_keys = (
-        "total_power_w",
-        "total_pf",
-        "total_import_kwh",
-        "l1_v",
-        "l2_v",
-        "l3_v",
-        "l1_a",
-        "l2_a",
-        "l3_a",
-    )
     missing_entity_keys = [
-        key for key in required_entity_keys if not isinstance(entities.get(key), str) or not entities[key]
+        key for key in REQUIRED_ENTITY_KEYS if not isinstance(entities.get(key), str) or not entities[key]
     ]
     if missing_entity_keys:
         missing = ", ".join(missing_entity_keys)
@@ -144,7 +158,60 @@ def load_homeassistant_config(path: Path) -> HomeAssistantConfig:
     return HomeAssistantConfig(
         url=url,
         token=token,
-        entities=HomeAssistantEntities(**{key: entities[key] for key in required_entity_keys}),
+        entities=HomeAssistantEntities(**{key: entities[key] for key in REQUIRED_ENTITY_KEYS}),
+    )
+
+
+def _read_secret_from_file(path_value: Optional[str]) -> Optional[str]:
+    if not path_value:
+        return None
+    secret_path = Path(path_value)
+    try:
+        return secret_path.read_text(encoding="utf-8").strip() or None
+    except OSError as exc:
+        raise ValueError(f"Failed reading secret file {secret_path}: {exc}") from exc
+
+
+def load_homeassistant_config(path: Path) -> HomeAssistantConfig:
+    yaml_config: Optional[HomeAssistantConfig] = None
+    if path.exists():
+        yaml_config = load_homeassistant_config_from_yaml(path)
+    else:
+        LOG.info("No YAML config found at %s, relying on environment configuration", path)
+
+    url = os.getenv("HA_URL") or (yaml_config.url if yaml_config else None)
+    token = (
+        os.getenv("HA_TOKEN")
+        or _read_secret_from_file(os.getenv("HA_TOKEN_FILE"))
+        or (yaml_config.token if yaml_config else None)
+    )
+    entity_values = {
+        key: os.getenv(env_var) or (
+            getattr(yaml_config.entities, key) if yaml_config else None
+        )
+        for key, env_var in ENTITY_ENV_VARS.items()
+    }
+
+    missing = []
+    if not url:
+        missing.append("HA_URL or homeassistant.url")
+    if not token:
+        missing.append("HA_TOKEN, HA_TOKEN_FILE, or homeassistant.token")
+    missing.extend(
+        f"{env_var} or homeassistant.entities.{key}"
+        for key, env_var in ENTITY_ENV_VARS.items()
+        if not entity_values.get(key)
+    )
+    if missing:
+        raise ValueError(
+            "Incomplete Home Assistant configuration. Missing: "
+            + ", ".join(missing)
+        )
+
+    return HomeAssistantConfig(
+        url=url,
+        token=token,
+        entities=HomeAssistantEntities(**entity_values),
     )
 
 

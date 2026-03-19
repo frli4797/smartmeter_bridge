@@ -1,0 +1,35 @@
+services:
+  smartmeter-faker:
+    image: smartmeter-faker:latest
+    build:
+      context: .
+    env_file:
+      - .env
+    environment:
+      HA_URL: ${HA_URL}
+      HA_TOKEN: ${HA_TOKEN}
+      HA_TOKEN_FILE: ${HA_TOKEN_FILE:-}
+      HA_ENTITY_TOTAL_POWER_W: ${HA_ENTITY_TOTAL_POWER_W}
+      HA_ENTITY_TOTAL_PF: ${HA_ENTITY_TOTAL_PF}
+      HA_ENTITY_TOTAL_IMPORT_KWH: ${HA_ENTITY_TOTAL_IMPORT_KWH}
+      HA_ENTITY_L1_V: ${HA_ENTITY_L1_V}
+      HA_ENTITY_L2_V: ${HA_ENTITY_L2_V}
+      HA_ENTITY_L3_V: ${HA_ENTITY_L3_V}
+      HA_ENTITY_L1_A: ${HA_ENTITY_L1_A}
+      HA_ENTITY_L2_A: ${HA_ENTITY_L2_A}
+      HA_ENTITY_L3_A: ${HA_ENTITY_L3_A}
+      HEALTHCHECK_MAX_AGE_SECONDS: ${HEALTHCHECK_MAX_AGE_SECONDS:-30}
+    command:
+      - python
+      - modbus_bridge.py
+      - --host
+      - ${MODBUS_HOST:-0.0.0.0}
+      - --port
+      - ${MODBUS_PORT:-5020}
+      - --poll-interval
+      - ${POLL_INTERVAL:-2}
+      - --grid-frequency
+      - ${GRID_FREQUENCY:-50}
+    ports:
+      - "${MODBUS_PORT:-5020}:5020"
+    restart: unless-stopped

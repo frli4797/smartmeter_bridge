@@ -1,12 +1,12 @@
 # smartmeter_faker
 
-`modbus_bridge.py` now reads the Home Assistant connection settings and entity IDs from a YAML file.
+`modbus_bridge.py` reads Home Assistant settings from environment variables first, with YAML as an optional fallback.
 
-1. Copy [homeassistant.yaml.example](/Users/fredriklilja/Development/smartmeter_faker/homeassistant.yaml.example) to `homeassistant.yaml`.
-2. Set `homeassistant.url`, `homeassistant.token`, and the entity IDs under `homeassistant.entities`.
+1. For Docker or Compose, copy [.env.example](/Users/fredriklilja/Development/smartmeter_faker/.env.example) to `.env` and set the `HA_*` variables.
+2. For local file-based config, copy [homeassistant.yaml.example](/Users/fredriklilja/Development/smartmeter_faker/homeassistant.yaml.example) to `homeassistant.yaml`.
 3. Start the bridge with `python3 modbus_bridge.py` or pass `--config /path/to/file.yaml`.
 
-`--ha-url` and `--ha-token` still work as runtime overrides for the YAML values.
+Environment variables take precedence over YAML. `HA_TOKEN_FILE` is also supported for Docker/Kubernetes secret mounts.
 
 ## GitHub Actions
 
@@ -27,11 +27,20 @@ Build the container locally with `docker build -t smartmeter-faker .`.
 
 The image includes a Docker `HEALTHCHECK` that reports unhealthy if the bridge has not completed a successful Home Assistant refresh within the configured age window. The application also logs its version on startup, and `python3 modbus_bridge.py --version` prints the current version string.
 
-Run it with your config mounted into the container:
+Run it directly with environment variables:
 
 ```sh
 docker run --rm \
   -p 5020:5020 \
-  -v "$(pwd)/homeassistant.yaml:/app/homeassistant.yaml:ro" \
+  --env-file .env \
   smartmeter-faker:latest
+```
+
+## Docker Compose
+
+Use [`compose.yaml`](/Users/fredriklilja/Development/smartmeter_faker/compose.yaml) together with a local `.env` file:
+
+```sh
+cp .env.example .env
+docker compose up --build
 ```

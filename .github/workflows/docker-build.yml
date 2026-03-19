@@ -32,8 +32,8 @@ jobs:
       contents: read
       packages: write
     env:
-      GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/smartmeter-faker
-      DOCKERHUB_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/smartmeter-faker
+      GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/smartmeter-modbus-bridge
+      DOCKERHUB_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/smartmeter-modbus-bridge
 
     steps:
       - name: Check out repository

@@ -15,11 +15,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY modbus_bridge.py ./
 COPY healthcheck.py ./
-COPY homeassistant.yaml.example ./
 
 EXPOSE 5020
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD ["python", "healthcheck.py"]
 
-CMD ["python", "modbus_bridge.py", "--config", "/app/homeassistant.yaml"]
+CMD ["python", "modbus_bridge.py"]
