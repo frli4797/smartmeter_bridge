@@ -73,6 +73,8 @@ jobs:
           push: true
           tags: ${{ steps.meta-ghcr.outputs.tags }}
           labels: ${{ steps.meta-ghcr.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Build multi-arch Docker image for Docker Hub
         if: startsWith(github.ref, 'refs/tags/v')
@@ -83,6 +85,8 @@ jobs:
           push: true
           tags: ${{ steps.meta-dockerhub.outputs.tags }}
           labels: ${{ steps.meta-dockerhub.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Validate multi-arch Docker build for pull requests
         if: github.event_name == 'pull_request'
@@ -91,3 +95,5 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64,linux/arm/v7,linux/arm/v6
           push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
