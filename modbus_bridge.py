@@ -13,11 +13,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
-APP_VERSION = os.getenv("APP_VERSION", "dev")
-if "--version" in sys.argv:
-    print(f"{Path(sys.argv[0]).name} {APP_VERSION}")
-    raise SystemExit(0)
-
 import requests
 from pymodbus.datastore import (
     ModbusDeviceContext,
@@ -32,6 +27,7 @@ except ImportError as exc:
     print("Missing dependency: PyYAML. Install it with 'pip install pyyaml'.", file=sys.stderr)
     raise SystemExit(1) from exc
 
+APP_VERSION = os.getenv("APP_VERSION", "dev")
 LOG = logging.getLogger("ha_em420")
 
 
@@ -186,7 +182,9 @@ def load_homeassistant_config_from_yaml(path: Path) -> HomeAssistantConfig:
         )
 
     missing_entity_keys = [
-        key for key in REQUIRED_ENTITY_KEYS if not isinstance(entities.get(key), str) or not entities[key]
+        key
+        for key in REQUIRED_ENTITY_KEYS
+        if not isinstance(entities.get(key), str) or not entities[key]
     ]
     if missing_entity_keys:
         missing = ", ".join(missing_entity_keys)
@@ -202,7 +200,9 @@ def load_homeassistant_config_from_yaml(path: Path) -> HomeAssistantConfig:
     return HomeAssistantConfig(
         url=url,
         token=token,
-        entities=HomeAssistantEntities(**{key: entities[key] for key in REQUIRED_ENTITY_KEYS}),
+        entities=HomeAssistantEntities(
+            **{key: entities[key] for key in REQUIRED_ENTITY_KEYS}
+        ),
         source=f"yaml:{path}",
     )
 
@@ -236,14 +236,14 @@ def load_homeassistant_config(path: Path) -> HomeAssistantConfig:
         LOG.info("No YAML config found at %s, relying on environment configuration", path)
 
     env_url = os.getenv("HA_URL")
-    env_token_raw = os.getenv("HA_TOKEN") or _read_secret_from_file(os.getenv("HA_TOKEN_FILE"))
+    env_token_raw = os.getenv("HA_TOKEN") or _read_secret_from_file(
+        os.getenv("HA_TOKEN_FILE")
+    )
     env_entities = {key: os.getenv(env_var) for key, env_var in ENTITY_ENV_VARS.items()}
     used_env = bool(env_url or env_token_raw or any(env_entities.values()))
 
     url = env_url or (yaml_config.url if yaml_config else None)
-    env_token = _validate_token(
-        env_token_raw
-    )
+    env_token = _validate_token(env_token_raw)
     yaml_token = _validate_token(yaml_config.token if yaml_config else None)
     token = env_token or yaml_token
     entity_values = {
@@ -273,7 +273,11 @@ def load_homeassistant_config(path: Path) -> HomeAssistantConfig:
         url=url,
         token=token,
         entities=HomeAssistantEntities(**entity_values),
-        source="environment+yaml" if yaml_config and used_env else ("environment" if used_env else f"yaml:{path}"),
+        source=(
+            "environment+yaml"
+            if yaml_config and used_env
+            else ("environment" if used_env else f"yaml:{path}")
+        ),
     )
 
 
@@ -332,7 +336,7 @@ class LoggingBlock(ModbusSequentialDataBlock):
         self.name = name
         self.log_reads = log_reads
 
-    def getValues(self, address, count=1):
+    def getValues(self, address: int, count: int = 1) -> list[int]:  # pylint: disable=invalid-name
         if self.log_reads:
             log_event(
                 logging.INFO,
@@ -396,7 +400,9 @@ class HomeAssistantClient:
         try:
             payload = response.json()
         except ValueError as exc:
-            raise HomeAssistantError("Home Assistant access check returned invalid JSON") from exc
+            raise HomeAssistantError(
+                "Home Assistant access check returned invalid JSON"
+            ) from exc
         if payload.get("message") != "API running.":
             raise HomeAssistantError("Unexpected response from Home Assistant access check")
 
@@ -641,7 +647,11 @@ def update_em420_registers_from_ha(
     )
 
 
-def calculate_backoff_delay(base_interval_s: float, consecutive_failures: int, max_interval_s: float) -> float:
+def calculate_backoff_delay(
+    base_interval_s: float,
+    consecutive_failures: int,
+    max_interval_s: float,
+) -> float:
     if consecutive_failures <= 0:
         return base_interval_s
     return min(base_interval_s * math.pow(2, consecutive_failures - 1), max_interval_s)
@@ -707,10 +717,12 @@ def updater_loop(
                 retry_delay_s=round(next_delay, 3),
                 error=str(exc),
             )
-        except Exception as exc:
+        except Exception as exc:  # pylint: disable=broad-exception-caught
             consecutive_failures += 1
             health_state.mark_error(str(exc))
-            next_delay = calculate_backoff_delay(interval_s, consecutive_failures, max_backoff_s)
+            next_delay = calculate_backoff_delay(
+                interval_s, consecutive_failures, max_backoff_s
+            )
             LOG.exception(
                 "Updater failed unexpectedly",
                 extra={
@@ -809,7 +821,10 @@ def main() -> None:
         sys.exit(1)
     if not ha_token:
         print(
-            "Missing Home Assistant token. Set it in the YAML config or pass --ha-token / HA_TOKEN.",
+            (
+                "Missing Home Assistant token. Set it in the YAML config "
+                "or pass --ha-token / HA_TOKEN."
+            ),
             file=sys.stderr,
         )
         sys.exit(1)
@@ -856,7 +871,7 @@ def main() -> None:
     store = ModbusDeviceContext(hr=hr_block)
     context = ModbusServerContext(devices={1: store}, single=False)
 
-    def _handle_signal(signum, frame):
+    def _handle_signal(signum: int, _frame: object) -> None:
         signal_name = signal.Signals(signum).name
         log_event(
             logging.INFO,

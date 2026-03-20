@@ -14,7 +14,7 @@ def main() -> int:
         payload = json.loads(HEALTH_PATH.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return 1
-    except (OSError, json.JSONDecodeError, ValueError):
+    except (OSError, json.JSONDecodeError):
         return 1
 
     last_success_at = payload.get("last_success_at")

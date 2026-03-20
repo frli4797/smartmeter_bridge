@@ -9,4 +9,4 @@ __pycache__/
 env/
 venv/
 homeassistant.yaml
-modbus_snoop.py~
+*~
