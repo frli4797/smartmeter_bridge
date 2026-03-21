@@ -1,0 +1,27 @@
+[MAIN]
+py-version=3.11
+jobs=0
+
+[MESSAGES CONTROL]
+disable=
+    missing-module-docstring,
+    missing-class-docstring,
+    missing-function-docstring,
+    too-few-public-methods,
+    too-many-arguments,
+    too-many-locals,
+    too-many-branches,
+    too-many-statements,
+    duplicate-code
+
+[FORMAT]
+max-line-length=100
+
+[BASIC]
+good-names=i,j,k,ex,_
+
+[DESIGN]
+max-args=10
+max-locals=25
+max-branches=20
+max-returns=8
