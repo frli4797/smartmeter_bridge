@@ -3,6 +3,7 @@ version: "dev"
 slug: smartmeter_faker
 description: "Expose Home Assistant energy sensors as a fake Modbus TCP EM420 meter."
 url: "https://github.com/frli4797/smartmeter_faker"
+init: false
 startup: services
 boot: auto
 homeassistant_api: true
