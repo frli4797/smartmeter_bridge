@@ -54,13 +54,6 @@ jobs:
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
           echo "Resolved build version: ${version}"
 
-      - name: Set add-on version in manifest
-        run: |
-          version="${{ steps.build-version.outputs.version }}"
-          echo "Setting add-on manifest version to ${version}"
-          perl -0pi -e 's/^version:\s*"[^"]*"/version: "'"${version}"'"/m' smartmeter_bridge/config.yaml
-          grep '^version:' smartmeter_bridge/config.yaml
-
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
