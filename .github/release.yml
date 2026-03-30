@@ -9,6 +9,28 @@ changelog:
     - title: Breaking Changes
       labels:
         - breaking
+    - title: Home Assistant Add-on
+      labels:
+        - addon
+        - home-assistant
+        - supervisor
+    - title: Bridge Runtime
+      labels:
+        - runtime
+        - modbus
+        - logging
+        - healthcheck
+    - title: Docker and Deployment
+      labels:
+        - docker
+        - container
+        - deployment
+        - build
+    - title: CI and Release Automation
+      labels:
+        - ci
+        - github-actions
+        - release
     - title: Features
       labels:
         - enhancement
@@ -22,10 +44,6 @@ changelog:
       labels:
         - documentation
         - docs
-    - title: CI and Build
-      labels:
-        - ci
-        - build
     - title: Maintenance
       labels:
         - chore
