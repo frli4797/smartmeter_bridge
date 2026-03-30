@@ -81,7 +81,9 @@ jobs:
         id: meta-ghcr
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.GHCR_IMAGE }}
+          images: |
+            ${{ env.GHCR_IMAGE }}
+            ${{ env.DOCKERHUB_IMAGE }}
           flavor: |
             latest=false
           tags: |
@@ -97,7 +99,9 @@ jobs:
         id: meta-ghcr-pr
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.GHCR_IMAGE }}
+          images: |
+            ${{ env.GHCR_IMAGE }}
+            ${{ env.DOCKERHUB_IMAGE }}
           flavor: |
             latest=false
           tags: |
@@ -122,20 +126,9 @@ jobs:
             type=ref,event=tag,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=raw,value=${{ inputs.image_tag }},enable=${{ github.event_name == 'workflow_dispatch' && inputs.publish_to_dockerhub }}
 
-      - name: Extract PR Docker Hub metadata
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        id: meta-dockerhub-pr
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.DOCKERHUB_IMAGE }}
-          flavor: |
-            latest=false
-          tags: |
-            type=raw,value=pr-${{ github.event.pull_request.number }}
-
       - name: Build multi-arch Docker image for GHCR
         if: |
-          (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/v')) ||
+          (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))) ||
           (github.event_name == 'workflow_dispatch' && inputs.publish_to_ghcr)
         uses: docker/build-push-action@v6
         with:
@@ -167,9 +160,7 @@ jobs:
 
       - name: Build multi-arch Docker image for Docker Hub
         if: |
-          github.ref == 'refs/heads/main' ||
-          startsWith(github.ref, 'refs/tags/v') ||
-          (github.event_name == 'workflow_dispatch' && inputs.publish_to_dockerhub)
+          github.event_name == 'workflow_dispatch' && inputs.publish_to_dockerhub
         uses: docker/build-push-action@v6
         with:
           context: ./smartmeter_bridge
@@ -180,21 +171,6 @@ jobs:
           labels: ${{ steps.meta-dockerhub.outputs.labels }}
           build-args: |
             BUILD_VERSION=${{ github.event_name == 'workflow_dispatch' && inputs.image_tag || steps.meta-dockerhub.outputs.version }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build multi-arch Docker image for Docker Hub on pull requests
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        uses: docker/build-push-action@v6
-        with:
-          context: ./smartmeter_bridge
-          file: ./smartmeter_bridge/Dockerfile.standalone
-          platforms: linux/amd64,linux/arm64,linux/arm/v7,linux/arm/v6
-          push: true
-          tags: ${{ steps.meta-dockerhub-pr.outputs.tags }}
-          labels: ${{ steps.meta-dockerhub-pr.outputs.labels }}
-          build-args: |
-            BUILD_VERSION=pr-${{ github.event.pull_request.number }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
