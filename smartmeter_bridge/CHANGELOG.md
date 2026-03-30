@@ -1,25 +1,10 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+All notable changes to this add-on will be documented in this file.
 
 The sections below are seeded from the existing release history. Future entries are added automatically when a GitHub release is published.
 
 <!-- changelog:release-entries -->
-
-## [v1.0.8] - 2026-03-30
-
-<!-- Release notes generated using configuration in .github/release.yml at main -->
-
-## What's Changed
-### CI and Release Automation
-* Add changelog automation for GitHub releases by @frli4797 in https://github.com/frli4797/smartmeter_bridge/pull/11
-### Other Changes
-* fix: add Home Assistant add-on icon and logo PNG assets by @frli4797 in https://github.com/frli4797/smartmeter_bridge/pull/10
-
-
-**Full Changelog**: https://github.com/frli4797/smartmeter_bridge/compare/v1.0.7...v1.0.8
-
-
 
 ## [v1.0.7] - 2026-03-30
 

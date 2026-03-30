@@ -5,6 +5,7 @@
 This repository is now structured as a Home Assistant add-on repository. The add-on itself lives in [smartmeter_bridge](smartmeter_bridge) and exposes Home Assistant sensor data as a fake Modbus TCP EM420-style meter.
 
 For add-on usage, see [DOCS.md](smartmeter_bridge/DOCS.md). The repository manifest is [repository.yaml](repository.yaml).
+The add-on changelog is available in [CHANGELOG.md](smartmeter_bridge/CHANGELOG.md).
 
 `modbus_bridge.py` still supports standalone usage and reads Home Assistant settings from environment variables first, with YAML as an optional fallback.
 
