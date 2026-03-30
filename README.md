@@ -1,9 +1,16 @@
 # smartmeter_bridge
 
+## Why this add-on?
+This repository is structured as a Home Assistant add-on repository. The add-on itself lives in [smartmeter_bridge](smartmeter_bridge) and exposes Home Assistant sensor data as a Modbus TCP EM420-style meter. It's intended use is to be accessed from a Keba ConnectP30 EV charger in order for the charger to balance phases and power to the overall consumption of the home. 
+
+## Install Add-on
+Add this repository as custom add-on repository in Homeassistant. https://github.com/frli4797/smartmeter_bridge or press the button below to add it automatically. 
+<br><br>
 [![Open your Home Assistant instance and show the add-on store with this repository URL pre-filled.](https://my.home-assistant.io/badges/supervisor_store.svg)](https://my.home-assistant.io/redirect/supervisor_store/?repository_url=https%3A%2F%2Fgithub.com%2Ffrli4797%2Fsmartmeter_bridge)
+<br><br>
+The add-on manifest is in [config.yaml](smartmeter_bridge/config.yaml), the build settings are in [build.yaml](smartmeter_bridge/build.yaml), and startup is handled by [run.sh](smartmeter_bridge/run.sh).
 
-This repository is now structured as a Home Assistant add-on repository. The add-on itself lives in [smartmeter_bridge](smartmeter_bridge) and exposes Home Assistant sensor data as a fake Modbus TCP EM420-style meter.
-
+## Local use and testing
 For add-on usage, see [DOCS.md](smartmeter_bridge/DOCS.md). The repository manifest is [repository.yaml](repository.yaml).
 The add-on changelog is available in [CHANGELOG.md](smartmeter_bridge/CHANGELOG.md).
 
@@ -29,12 +36,6 @@ Set these GitHub repository secrets for Docker Hub publishing:
 2. `DOCKERHUB_TOKEN`
 
 For a manual Docker Hub publish in GitHub Actions, open `Docker Build`, click `Run workflow`, set `publish_to_dockerhub` to `true`, and choose the `image_tag` you want to publish.
-
-## Home Assistant Add-on
-
-This repository root is now a proper add-on repository. Add it to Home Assistant as a custom add-on repository, or copy the whole repository into your Home Assistant add-ons directory.
-
-The add-on manifest is in [config.yaml](smartmeter_bridge/config.yaml), the build settings are in [build.yaml](smartmeter_bridge/build.yaml), and startup is handled by [run.sh](smartmeter_bridge/run.sh).
 
 ## Docker
 
