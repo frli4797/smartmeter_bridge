@@ -1,8 +1,12 @@
 # smartmeter_faker
 
-`modbus_bridge.py` reads Home Assistant settings from environment variables first, with YAML as an optional fallback.
+This project now doubles as a Home Assistant add-on for exposing Home Assistant sensor data as a fake Modbus TCP EM420-style meter.
 
-1. For Docker or Compose, copy [.env.example](/Users/fredriklilja/Development/smartmeter_faker/.env.example) to `.env` and set the `HA_*` variables.
+For Home Assistant add-on usage, see [DOCS.md](/Users/fredriklilja/Development/smartmeter_faker/DOCS.md). The add-on uses the internal Home Assistant API proxy by default, so URL and token are no longer exposed as add-on options.
+
+`modbus_bridge.py` still supports standalone usage and reads Home Assistant settings from environment variables first, with YAML as an optional fallback.
+
+1. For Docker or Compose, copy `.env.example` to `.env` and set the `HA_*` variables.
 2. For local file-based config, copy [homeassistant.yaml.example](/Users/fredriklilja/Development/smartmeter_faker/homeassistant.yaml.example) to `homeassistant.yaml`.
 3. Start the bridge with `python3 modbus_bridge.py` or pass `--config /path/to/file.yaml`.
 
@@ -20,6 +24,12 @@ Set these GitHub repository secrets for Docker Hub publishing:
 2. `DOCKERHUB_TOKEN`
 
 For a manual Docker Hub publish in GitHub Actions, open `Docker Build`, click `Run workflow`, set `publish_to_dockerhub` to `true`, and choose the `image_tag` you want to publish.
+
+## Home Assistant Add-on
+
+This repository root is now a single add-on folder and can be copied directly into Home Assistant's local add-ons directory, for example `/addons/smartmeter_faker`.
+
+The add-on manifest is in [config.yaml](/Users/fredriklilja/Development/smartmeter_faker/config.yaml), the build settings are in [build.yaml](/Users/fredriklilja/Development/smartmeter_faker/build.yaml), and startup is handled by [run.sh](/Users/fredriklilja/Development/smartmeter_faker/run.sh).
 
 ## Docker
 
