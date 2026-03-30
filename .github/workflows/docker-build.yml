@@ -106,13 +106,13 @@ jobs:
           (github.event_name == 'workflow_dispatch' && inputs.publish_to_ghcr)
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ./smartmeter_bridge
           platforms: linux/amd64,linux/arm64,linux/arm/v7,linux/arm/v6
           push: true
           tags: ${{ steps.meta-ghcr.outputs.tags }}
           labels: ${{ steps.meta-ghcr.outputs.labels }}
           build-args: |
-            APP_VERSION=${{ github.event_name == 'workflow_dispatch' && inputs.image_tag || steps.meta-ghcr.outputs.version }}
+            BUILD_VERSION=${{ github.event_name == 'workflow_dispatch' && inputs.image_tag || steps.meta-ghcr.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -123,13 +123,13 @@ jobs:
           (github.event_name == 'workflow_dispatch' && inputs.publish_to_dockerhub)
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ./smartmeter_bridge
           platforms: linux/amd64,linux/arm64,linux/arm/v7,linux/arm/v6
           push: true
           tags: ${{ steps.meta-dockerhub.outputs.tags }}
           labels: ${{ steps.meta-dockerhub.outputs.labels }}
           build-args: |
-            APP_VERSION=${{ github.event_name == 'workflow_dispatch' && inputs.image_tag || steps.meta-dockerhub.outputs.version }}
+            BUILD_VERSION=${{ github.event_name == 'workflow_dispatch' && inputs.image_tag || steps.meta-dockerhub.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -137,10 +137,10 @@ jobs:
         if: github.event_name == 'pull_request'
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ./smartmeter_bridge
           platforms: linux/amd64,linux/arm64,linux/arm/v7,linux/arm/v6
           push: false
           build-args: |
-            APP_VERSION=pr-${{ github.event.pull_request.number }}
+            BUILD_VERSION=pr-${{ github.event.pull_request.number }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

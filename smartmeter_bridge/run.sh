@@ -56,7 +56,7 @@ if bashio::config.true 'debug'; then
     args+=("--debug")
 fi
 
-bashio::log.info "Starting Smartmeter Faker"
+bashio::log.info "Starting Smartmeter Bridge"
 bashio::log.info "Home Assistant endpoint: ${HA_URL}"
 bashio::log.info "Modbus TCP endpoint: 0.0.0.0:5020"
 

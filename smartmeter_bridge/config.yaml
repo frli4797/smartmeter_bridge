@@ -1,8 +1,8 @@
-name: "Smartmeter Faker"
+name: "Smartmeter Bridge"
 version: "dev"
-slug: smartmeter_faker
+slug: smartmeter_bridge
 description: "Expose Home Assistant energy sensors as a fake Modbus TCP EM420 meter."
-url: "https://github.com/frli4797/smartmeter_faker"
+url: "https://github.com/frli4797/smartmeter_bridge"
 init: false
 startup: services
 boot: auto

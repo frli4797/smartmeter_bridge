@@ -1,4 +1,4 @@
-# Smartmeter Faker
+# Smartmeter Bridge
 
 This add-on exposes a fake Modbus TCP energy meter that mirrors values from Home Assistant sensors. It is meant for devices that expect a meter speaking Modbus, such as a KEBA wallbox expecting an EM420-style meter.
 
@@ -15,17 +15,17 @@ That means the add-on does not need a user-configured Home Assistant URL or long
 
 ## Installation
 
-### Local add-on
+### Local repository
 
-1. Copy this project folder into your Home Assistant add-ons directory, for example:
-   `/addons/smartmeter_faker`
+1. Copy this repository into your Home Assistant add-ons directory, for example:
+   `/addons/smartmeter_bridge_repo`
 2. In Home Assistant, go to **Settings -> Add-ons -> Add-on Store**.
 3. Open the menu, choose **Check for updates** or reload the local repository.
-4. Open **Smartmeter Faker** and install it.
+4. Open **Smartmeter Bridge** and install it.
 
 ### Git repository
 
-This repository is currently structured as a single add-on folder. If you want to publish it as a full custom add-on repository, wrap it in a repository root with `repository.yaml` and place this add-on in its own subdirectory.
+Add this repository URL in Home Assistant's add-on store, then install the `Smartmeter Bridge` add-on from that repository.
 
 ## Configuration
 
