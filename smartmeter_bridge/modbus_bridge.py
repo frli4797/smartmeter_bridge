@@ -950,18 +950,38 @@ def main() -> None:
         sys.exit(1)
 
     ha = HomeAssistantClient(base_url=ha_url, token=ha_token)
+    health_state = HealthState(Path(args.health_path), APP_VERSION)
+    health_state.mark_starting()
+
     try:
         ha.validate_access()
         ha.validate_entities(ha_config.entities)
     except HomeAssistantAuthError as exc:
+        health_state.mark_error(str(exc))
         print(f"Home Assistant authorization failed: {exc}", file=sys.stderr)
+        ha.close()
+        sys.exit(1)
+    except HomeAssistantEntityError as exc:
+        health_state.mark_error(str(exc))
+        print(f"Home Assistant entity validation failed: {exc}", file=sys.stderr)
+        ha.close()
         sys.exit(1)
     except HomeAssistantError as exc:
-        print(f"Home Assistant validation failed: {exc}", file=sys.stderr)
-        sys.exit(1)
+        health_state.mark_error(str(exc))
+        log_event(
+            logging.WARNING,
+            "Initial Home Assistant validation failed; bridge will keep retrying",
+            event="ha_startup_validation_deferred",
+            failure_type=type(exc).__name__,
+            error=str(exc),
+        )
+    else:
+        log_event(
+            logging.INFO,
+            "Initial Home Assistant validation succeeded",
+            event="ha_startup_validation_succeeded",
+        )
 
-    health_state = HealthState(Path(args.health_path), APP_VERSION)
-    health_state.mark_starting()
     reporter = PollReporter()
     stop_event = threading.Event()
 
