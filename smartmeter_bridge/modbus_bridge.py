@@ -358,6 +358,8 @@ class LoggingBlock(ModbusSequentialDataBlock):
         self.log_reads = log_reads
         self._default_value = 0
         self._internal_write_depth = 0
+        self._serving_enabled = False
+        self._serving_unavailable_reason = "Home Assistant data has not been loaded yet"
         self._access_log_interval_s = access_log_interval_s
         self._access_stats: dict[str, dict[str, Any]] = {}
 
@@ -425,8 +427,34 @@ class LoggingBlock(ModbusSequentialDataBlock):
         stats["access_count"] = 0
         stats["register_count"] = 0
 
+    def set_serving_enabled(self, enabled: bool, reason: Optional[str] = None) -> None:
+        if self._serving_enabled == enabled and (
+            enabled or reason == self._serving_unavailable_reason
+        ):
+            return
+        self._serving_enabled = enabled
+        if enabled:
+            self._serving_unavailable_reason = ""
+            log_event(
+                logging.INFO,
+                "Modbus register serving enabled",
+                event="modbus_serving_enabled",
+                block=self.name,
+            )
+        else:
+            self._serving_unavailable_reason = reason or "Home Assistant data is unavailable"
+            log_event(
+                logging.WARNING,
+                "Modbus register serving disabled",
+                event="modbus_serving_disabled",
+                block=self.name,
+                reason=self._serving_unavailable_reason,
+            )
+
     def getValues(self, address: int, count: int = 1) -> list[int]:  # pylint: disable=invalid-name
         self._log_external_access("read", address, count)
+        if not self._serving_enabled:
+            raise ValueError(self._serving_unavailable_reason)
         try:
             values = super().getValues(address, count)
         except Exception as exc:
@@ -538,6 +566,8 @@ class HomeAssistantClient:
 
     def validate_entities(self, entities: HomeAssistantEntities) -> None:
         for entity_id in entities.__dict__.values():
+            if entity_id is None:
+                continue
             self.get_state(entity_id)
 
     def get_state(self, entity_id: str) -> dict[str, Any]:
@@ -549,28 +579,30 @@ class HomeAssistantClient:
                 f"Home Assistant returned invalid JSON for entity {entity_id}"
             ) from exc
 
-    def get_float(self, entity_id: str, default: Optional[float] = None) -> Optional[float]:
+    def get_required_float(self, entity_id: str) -> float:
         data = self.get_state(entity_id)
         state = data.get("state")
         if state in (None, "", "unknown", "unavailable"):
-            log_event(
-                logging.WARNING,
-                "Entity returned unavailable state",
-                event="ha_entity_defaulted",
-                entity_id=entity_id,
-                state=state,
-                default=default,
+            raise HomeAssistantEntityError(
+                f"Home Assistant entity {entity_id} has unavailable state: {state!r}"
             )
-            return default
         try:
             return float(str(state).replace(",", "."))
-        except ValueError:
+        except ValueError as exc:
+            raise HomeAssistantEntityError(
+                f"Home Assistant entity {entity_id} has non-numeric state: {state!r}"
+            ) from exc
+
+    def get_float(self, entity_id: str, default: Optional[float] = None) -> Optional[float]:
+        try:
+            return self.get_required_float(entity_id)
+        except HomeAssistantEntityError as exc:
             log_event(
                 logging.WARNING,
-                "Entity returned non-numeric state",
+                "Entity state could not be used as a number",
                 event="ha_entity_defaulted",
                 entity_id=entity_id,
-                state=state,
+                error=str(exc),
                 default=default,
             )
             return default
