@@ -707,12 +707,6 @@ def update_em420_registers_from_ha(
     l3_a = ha.get_float(entities.l3_a, 0.0) or 0.0
 
     if calculate_power_factor:
-        estimated_total_from_phases = max(
-            (l1_v * l1_a) + (l2_v * l2_a) + (l3_v * l3_a),
-            0.0,
-        )
-        if use_phase_sum_for_total_power:
-            total_power_w = estimated_total_from_phases
         total_pf = calculate_three_phase_power_factor(
             total_power_w=total_power_w,
             l1_v=l1_v,
@@ -722,6 +716,7 @@ def update_em420_registers_from_ha(
             l2_a=l2_a,
             l3_a=l3_a,
         )
+        # Estimate per-phase active power from V * I * PF.
         l1_power_w = max(0.0, l1_v * l1_a * total_pf)
         l2_power_w = max(0.0, l2_v * l2_a * total_pf)
         l3_power_w = max(0.0, l3_v * l3_a * total_pf)

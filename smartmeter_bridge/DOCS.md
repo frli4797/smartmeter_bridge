@@ -45,7 +45,7 @@ Optional settings:
 - `poll_interval`: Seconds between polls.
 - `grid_frequency`: Usually `50` or `60`.
 - `use_phase_sum_for_total_power`: Derive total power from phase values instead of using the total power entity.
-- `calculate_power_factor`: Calculate the total power factor from total power and per-phase voltage/current values instead of reading `total_pf` from Home Assistant.
+- `calculate_power_factor`: Calculate the total power factor from `total_power_w` and the per-phase voltage/current values instead of reading `total_pf` from Home Assistant.
 - `log_reads`: Log Modbus reads.
 - `debug`: Enable debug logging.
 - `healthcheck_max_age_seconds`: Maximum age of the last successful poll before the container is considered unhealthy.
@@ -53,6 +53,8 @@ Optional settings:
 If `calculate_power_factor` is disabled, configure `total_pf` as a Home Assistant entity ID. If it is enabled, `total_pf` can be left empty.
 
 Home Assistant add-on configuration does not support conditionally hiding options in the add-on UI, so the `total_pf` field will still be visible even when `calculate_power_factor` is enabled.
+
+When `calculate_power_factor` is enabled, `total_power_w` remains the source of truth for total power. The add-on only derives the power factor value from the available total power and per-phase voltage/current sensors.
 
 ## Connecting your client
 
