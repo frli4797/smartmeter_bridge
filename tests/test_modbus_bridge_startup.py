@@ -18,7 +18,15 @@ def install_dependency_stubs() -> None:
         def close(self) -> None:
             return None
 
+    class Response:
+        def __init__(self) -> None:
+            self.status_code = 200
+
+        def json(self):
+            return {}
+
     requests_module.Session = Session
+    requests_module.Response = Response
     sys.modules.setdefault("requests", requests_module)
 
     yaml_module = types.ModuleType("yaml")
