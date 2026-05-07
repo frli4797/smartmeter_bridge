@@ -261,6 +261,31 @@ class HomeAssistantRegisterUpdateTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             block.getValues(modbus_bridge.idx(0), 2)
 
+    def test_modbus_reads_resume_after_unavailable_value_recovers(self) -> None:
+        block = self.make_block()
+        states = self.make_states(**{"sensor.total_power_w": "unavailable"})
+        client = self.make_client(states)
+
+        with self.assertRaises(modbus_bridge.HomeAssistantEntityError):
+            modbus_bridge.update_em420_registers_from_ha(
+                hr_block=block,
+                ha=client,
+                entities=make_config().entities,
+                reporter=modbus_bridge.PollReporter(),
+            )
+        with self.assertRaises(ValueError):
+            block.getValues(modbus_bridge.idx(0), 2)
+
+        states["sensor.total_power_w"] = "1200"
+        modbus_bridge.update_em420_registers_from_ha(
+            hr_block=block,
+            ha=client,
+            entities=make_config().entities,
+            reporter=modbus_bridge.PollReporter(),
+        )
+
+        self.assertEqual(block.getValues(modbus_bridge.idx(0), 2), [0, 12000])
+
 
 if __name__ == "__main__":
     unittest.main()
