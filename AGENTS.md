@@ -27,6 +27,15 @@
 - Keep documented defaults and option names aligned with the implementation.
 - Avoid committing local-only files such as `.DS_Store`, editor caches, or temporary artifacts.
 
+## Releases
+
+- Always prepare releases on a release branch, not directly on `main`.
+- Confirm the target release version with the user before changing version files.
+- Use the change context to recommend whether the release should be patch, minor, or major, but wait for user confirmation before applying the version bump.
+- Always increment the release version as part of release preparation.
+- Always create or update release notes for the release.
+- Verify that release notes, changelog entries, add-on metadata, and any version references all agree before finishing.
+
 ## Delivery Notes
 
 - Summarize what changed, what was verified, and what remains.
