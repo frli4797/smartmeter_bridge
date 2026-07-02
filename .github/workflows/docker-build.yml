@@ -34,6 +34,7 @@ jobs:
     env:
       GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/smartmeter-modbus-bridge
       DOCKERHUB_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/smartmeter-modbus-bridge
+      DOCKER_CACHE_SCOPE: smartmeter-bridge-standalone
 
     steps:
       - name: Check out repository
@@ -148,8 +149,8 @@ jobs:
           labels: ${{ steps.meta-ghcr.outputs.labels }}
           build-args: |
             BUILD_VERSION=${{ steps.build-version.outputs.version }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ env.DOCKER_CACHE_SCOPE }}
+          cache-to: type=gha,mode=max,scope=${{ env.DOCKER_CACHE_SCOPE }}
 
       - name: Build multi-arch Docker image for GHCR on pull requests
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
@@ -163,8 +164,8 @@ jobs:
           labels: ${{ steps.meta-ghcr-pr.outputs.labels }}
           build-args: |
             BUILD_VERSION=${{ steps.build-version.outputs.version }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ env.DOCKER_CACHE_SCOPE }}
+          cache-to: type=gha,mode=max,scope=${{ env.DOCKER_CACHE_SCOPE }}
 
       - name: Build multi-arch Docker image for Docker Hub
         if: |
@@ -179,8 +180,8 @@ jobs:
           labels: ${{ steps.meta-dockerhub.outputs.labels }}
           build-args: |
             BUILD_VERSION=${{ steps.build-version.outputs.version }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ env.DOCKER_CACHE_SCOPE }}
+          cache-to: type=gha,mode=max,scope=${{ env.DOCKER_CACHE_SCOPE }}
 
       - name: Validate multi-arch Docker build for fork pull requests
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
@@ -193,5 +194,5 @@ jobs:
           tags: ${{ env.GHCR_IMAGE }}:pr-${{ github.event.pull_request.number }}
           build-args: |
             BUILD_VERSION=${{ steps.build-version.outputs.version }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ env.DOCKER_CACHE_SCOPE }}
+          cache-to: type=gha,mode=max,scope=${{ env.DOCKER_CACHE_SCOPE }}

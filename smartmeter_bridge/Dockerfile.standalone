@@ -1,17 +1,21 @@
+# syntax=docker/dockerfile:1.7
 FROM python:3.12-alpine
 
 WORKDIR /app
 
-ARG BUILD_VERSION=dev
-
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV APP_VERSION=${BUILD_VERSION}
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+ENV PIP_ROOT_USER_ACTION=ignore
 ENV HEALTH_STATUS_PATH=/tmp/smartmeter-faker-health.json
 ENV HEALTHCHECK_MAX_AGE_SECONDS=30
 
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -r requirements.txt
+
+ARG BUILD_VERSION=dev
+ENV APP_VERSION=${BUILD_VERSION}
 
 COPY modbus_bridge.py ./
 COPY healthcheck.py ./
