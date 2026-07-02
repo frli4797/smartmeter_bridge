@@ -49,6 +49,7 @@ Optional settings:
 - `log_reads`: Log Modbus reads.
 - `debug`: Enable debug logging.
 - `healthcheck_max_age_seconds`: Maximum age of the last successful poll before the container is considered unhealthy.
+- `startup_grace`: Seconds to treat Home Assistant startup/reboot connectivity failures as expected before warning.
 
 If `calculate_power_factor` is disabled, configure `total_pf` as a Home Assistant entity ID. If it is enabled, `total_pf` can be left empty.
 
@@ -64,5 +65,6 @@ Point your Modbus TCP client or wallbox at the Home Assistant host IP and port `
 
 - The add-on exposes port `5020/tcp`.
 - Logs are JSON-formatted from the Python service.
-- Startup validation fails fast if Home Assistant cannot be reached or an entity ID is missing.
+- Temporary Home Assistant connectivity failures during startup or host reboot are retried with backoff and quieter logs for up to 120 seconds by default.
+- Startup validation still fails fast for authorization failures or missing entity IDs.
 - The add-on uses `http://supervisor/core` and `SUPERVISOR_TOKEN` internally.

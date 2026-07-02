@@ -45,7 +45,7 @@ The image includes a Docker `HEALTHCHECK` that reports unhealthy if the bridge h
 
 Use [Dockerfile](smartmeter_bridge/Dockerfile) only for Home Assistant add-on builds. Use [Dockerfile.standalone](smartmeter_bridge/Dockerfile.standalone) for local Docker builds and registry publishing.
 
-Runtime logs are emitted as JSON and include structured events for Home Assistant poll success/failure, Modbus reads, and server lifecycle. Home Assistant polling now uses exponential backoff after failures, capped by `--max-backoff`.
+Runtime logs are emitted as JSON and include structured events for Home Assistant poll success/failure, Modbus reads, and server lifecycle. Home Assistant polling uses exponential backoff after failures, capped by `--max-backoff`. Connectivity failures during Home Assistant startup or host reboot are treated as expected for `--startup-grace` seconds, defaulting to 120 seconds, and are logged conservatively before escalating to warnings.
 
 Run it directly with environment variables:
 

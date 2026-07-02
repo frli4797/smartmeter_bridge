@@ -25,6 +25,7 @@ options:
   log_reads: false
   debug: false
   healthcheck_max_age_seconds: 30
+  startup_grace: 120
   total_power_w: "sensor.power_hem"
   total_import_kwh: "sensor.last_meter_consumption_hem"
   l1_v: "sensor.tibber_spanning_fas1"
@@ -41,6 +42,7 @@ schema:
   log_reads: "bool"
   debug: "bool"
   healthcheck_max_age_seconds: "int"
+  startup_grace: "float"
   total_power_w: "str"
   total_pf: "str?"
   total_import_kwh: "str"

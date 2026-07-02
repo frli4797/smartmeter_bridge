@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from abc import ABC, abstractmethod
 import argparse
 from contextlib import contextmanager
 import hashlib
@@ -136,6 +137,28 @@ class HomeAssistantConnectivityError(HomeAssistantError):
 
 class HomeAssistantEntityError(HomeAssistantError):
     pass
+
+
+class MeterRegisterMapper(ABC):
+    meter_type: str
+    register_count: int
+
+    @abstractmethod
+    def initialize(self, hr_block: "LoggingBlock", frequency_hz: float = 50.0) -> None:
+        """Write static/default holding-register values before live data is available."""
+
+    @abstractmethod
+    def update_from_homeassistant(
+        self,
+        hr_block: "LoggingBlock",
+        ha: "HomeAssistantClient",
+        entities: HomeAssistantEntities,
+        reporter: "PollReporter",
+        frequency_hz: float = 50.0,
+        use_phase_sum_for_total_power: bool = False,
+        calculate_power_factor: bool = False,
+    ) -> None:
+        """Read source values and publish this meter's holding-register layout."""
 
 
 REQUIRED_ENTITY_KEYS = (
@@ -646,6 +669,120 @@ class PollReporter:
             )
 
 
+class PollFailureReporter:
+    def __init__(
+        self,
+        startup_grace_s: float = 120.0,
+        transient_log_interval_s: float = 60.0,
+        persistent_log_interval_s: float = 60.0,
+    ):
+        self.startup_grace_s = startup_grace_s
+        self.transient_log_interval_s = transient_log_interval_s
+        self.persistent_log_interval_s = persistent_log_interval_s
+        self.first_failure_at: Optional[float] = None
+        self.last_log_at: Optional[float] = None
+        self.suppressed_failures = 0
+
+    def _failure_age(self, now: float) -> float:
+        if self.first_failure_at is None:
+            return 0.0
+        return max(0.0, now - self.first_failure_at)
+
+    def log_homeassistant_failure(
+        self,
+        exc: HomeAssistantError,
+        *,
+        consecutive_failures: int,
+        retry_delay_s: float,
+    ) -> None:
+        now = time.time()
+        if self.first_failure_at is None or consecutive_failures <= 1:
+            self.first_failure_at = now
+            self.last_log_at = None
+            self.suppressed_failures = 0
+
+        failure_age_s = self._failure_age(now)
+        in_startup_grace = failure_age_s < self.startup_grace_s
+        interval_s = (
+            self.transient_log_interval_s
+            if in_startup_grace
+            else self.persistent_log_interval_s
+        )
+        should_log = (
+            self.last_log_at is None or now - self.last_log_at >= interval_s
+        )
+        if not should_log:
+            self.suppressed_failures += 1
+            return
+
+        suppressed_failures = self.suppressed_failures
+        self.suppressed_failures = 0
+        self.last_log_at = now
+
+        if in_startup_grace:
+            log_event(
+                logging.INFO,
+                "Waiting for Home Assistant to become available",
+                event="ha_poll_waiting",
+                failure_type=type(exc).__name__,
+                consecutive_failures=consecutive_failures,
+                suppressed_failures=suppressed_failures,
+                retry_delay_s=round(retry_delay_s, 3),
+                startup_grace_s=round(self.startup_grace_s, 3),
+                failure_age_s=round(failure_age_s, 3),
+                error=str(exc),
+            )
+            return
+
+        log_event(
+            logging.WARNING,
+            "Home Assistant update still failing",
+            event="ha_poll_failure",
+            failure_type=type(exc).__name__,
+            consecutive_failures=consecutive_failures,
+            suppressed_failures=suppressed_failures,
+            retry_delay_s=round(retry_delay_s, 3),
+            failure_age_s=round(failure_age_s, 3),
+            error=str(exc),
+        )
+
+    def log_authorization_failure(
+        self,
+        exc: HomeAssistantAuthError,
+        *,
+        consecutive_failures: int,
+        retry_delay_s: float,
+        token_fingerprint: str,
+    ) -> None:
+        self.first_failure_at = self.first_failure_at or time.time()
+        log_event(
+            logging.ERROR,
+            "Home Assistant authorization failed",
+            event="ha_poll_failure",
+            failure_type="authorization",
+            consecutive_failures=consecutive_failures,
+            retry_delay_s=round(retry_delay_s, 3),
+            token_fingerprint=token_fingerprint,
+            error=str(exc),
+        )
+
+    def log_recovered(self, *, consecutive_failures: int) -> None:
+        if not consecutive_failures:
+            return
+        now = time.time()
+        log_event(
+            logging.INFO,
+            "Recovered Home Assistant polling",
+            event="ha_poll_recovered",
+            consecutive_failures=consecutive_failures,
+            outage_s=round(self._failure_age(now), 3),
+            suppressed_failures=self.suppressed_failures,
+        )
+        self.first_failure_at = None
+        self.last_log_at = None
+        self.suppressed_failures = 0
+
+
 # ----------------------------
 # EM420 defaults and updates
 # ----------------------------
@@ -860,6 +997,41 @@ def update_em420_registers_from_ha(
     )
 
 
+class EM420MeterRegisterMapper(MeterRegisterMapper):
+    meter_type = "em420"
+    register_count = 2000
+
+    def initialize(self, hr_block: LoggingBlock, frequency_hz: float = 50.0) -> None:
+        initialize_em420_defaults(hr_block, frequency_hz=frequency_hz)
+
+    def update_from_homeassistant(
+        self,
+        hr_block: LoggingBlock,
+        ha: HomeAssistantClient,
+        entities: HomeAssistantEntities,
+        reporter: PollReporter,
+        frequency_hz: float = 50.0,
+        use_phase_sum_for_total_power: bool = False,
+        calculate_power_factor: bool = False,
+    ) -> None:
+        update_em420_registers_from_ha(
+            hr_block=hr_block,
+            ha=ha,
+            entities=entities,
+            reporter=reporter,
+            frequency_hz=frequency_hz,
+            use_phase_sum_for_total_power=use_phase_sum_for_total_power,
+            calculate_power_factor=calculate_power_factor,
+        )
+
+
+def get_meter_register_mapper(meter_type: str = "em420") -> MeterRegisterMapper:
+    normalized = meter_type.strip().lower()
+    if normalized == EM420MeterRegisterMapper.meter_type:
+        return EM420MeterRegisterMapper()
+    raise ValueError(f"Unsupported meter type: {meter_type}")
+
+
 def calculate_backoff_delay(
     base_interval_s: float,
     consecutive_failures: int,
@@ -874,6 +1046,7 @@ def updater_loop(
     hr_block: LoggingBlock,
     ha: HomeAssistantClient,
     entities: HomeAssistantEntities,
+    meter_mapper: MeterRegisterMapper,
     health_state: HealthState,
     reporter: PollReporter,
     stop_event: threading.Event,
@@ -881,12 +1054,14 @@ def updater_loop(
     frequency_hz: float,
     use_phase_sum_for_total_power: bool,
     max_backoff_s: float,
+    startup_grace_s: float,
 ) -> None:
     consecutive_failures = 0
+    failure_reporter = PollFailureReporter(startup_grace_s=startup_grace_s)
     while not stop_event.is_set():
         next_delay = interval_s
         try:
-            update_em420_registers_from_ha(
+            meter_mapper.update_from_homeassistant(
                 hr_block=hr_block,
                 ha=ha,
                 entities=entities,
@@ -900,41 +1075,27 @@ def updater_loop(
                     "on",
                 },
             )
-            if consecutive_failures:
-                log_event(
-                    logging.INFO,
-                    "Recovered Home Assistant polling",
-                    event="ha_poll_recovered",
-                    consecutive_failures=consecutive_failures,
-                )
+            failure_reporter.log_recovered(consecutive_failures=consecutive_failures)
             consecutive_failures = 0
             health_state.mark_success()
         except HomeAssistantAuthError as exc:
             consecutive_failures += 1
             health_state.mark_error(str(exc))
             next_delay = calculate_backoff_delay(interval_s, consecutive_failures, max_backoff_s)
-            log_event(
-                logging.ERROR,
-                "Home Assistant authorization failed",
-                event="ha_poll_failure",
-                failure_type="authorization",
+            failure_reporter.log_authorization_failure(
+                exc,
                 consecutive_failures=consecutive_failures,
                 retry_delay_s=round(next_delay, 3),
                 token_fingerprint=ha.token_fingerprint,
-                error=str(exc),
             )
         except HomeAssistantError as exc:
             consecutive_failures += 1
             health_state.mark_error(str(exc))
             next_delay = calculate_backoff_delay(interval_s, consecutive_failures, max_backoff_s)
-            log_event(
-                logging.WARNING,
-                "Home Assistant update failed",
-                event="ha_poll_failure",
-                failure_type=type(exc).__name__,
+            failure_reporter.log_homeassistant_failure(
+                exc,
                 consecutive_failures=consecutive_failures,
                 retry_delay_s=round(next_delay, 3),
-                error=str(exc),
             )
         except Exception as exc:  # pylint: disable=broad-exception-caught
             consecutive_failures += 1
@@ -1003,6 +1164,12 @@ def main() -> None:
         action="store_true",
         help="Ignore sensor.power_hem and derive total power from phase V*I*PF",
     )
+    parser.add_argument(
+        "--meter-type",
+        default="em420",
+        choices=("em420",),
+        help="Meter register layout to expose over Modbus",
+    )
     parser.add_argument("--log-reads", action="store_true", help="Log Modbus reads")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     parser.add_argument(
@@ -1015,6 +1182,15 @@ def main() -> None:
         type=float,
         default=30.0,
         help="Maximum retry delay in seconds after Home Assistant polling failures",
+    )
+    parser.add_argument(
+        "--startup-grace",
+        type=float,
+        default=120.0,
+        help=(
+            "Seconds to treat Home Assistant connectivity failures as expected "
+            "startup/reboot waiting before warning"
+        ),
     )
     args = parser.parse_args()
 
@@ -1050,6 +1226,7 @@ def main() -> None:
         sys.exit(1)
 
     ha = HomeAssistantClient(base_url=ha_url, token=ha_token)
+    meter_mapper = get_meter_register_mapper(args.meter_type)
     health_state = HealthState(Path(args.health_path), APP_VERSION)
     health_state.mark_starting()
 
@@ -1069,10 +1246,11 @@ def main() -> None:
     except HomeAssistantError as exc:
         health_state.mark_error(str(exc))
         log_event(
-            logging.WARNING,
-            "Initial Home Assistant validation failed; bridge will keep retrying",
+            logging.INFO,
+            "Initial Home Assistant validation failed; bridge will wait and keep retrying",
             event="ha_startup_validation_deferred",
             failure_type=type(exc).__name__,
+            startup_grace_s=round(args.startup_grace, 3),
             error=str(exc),
         )
     else:
@@ -1085,10 +1263,10 @@ def main() -> None:
     reporter = PollReporter()
     stop_event = threading.Event()
 
-    hr_values = allocate_registers(2000)
+    hr_values = allocate_registers(meter_mapper.register_count)
     hr_block = LoggingBlock("HR", 0, hr_values, log_reads=args.log_reads)
 
-    initialize_em420_defaults(hr_block, frequency_hz=args.grid_frequency)
+    meter_mapper.initialize(hr_block, frequency_hz=args.grid_frequency)
 
     updater = threading.Thread(
         target=updater_loop,
@@ -1096,6 +1274,7 @@ def main() -> None:
             hr_block,
             ha,
             ha_config.entities,
+            meter_mapper,
             health_state,
             reporter,
             stop_event,
@@ -1103,6 +1282,7 @@ def main() -> None:
             args.grid_frequency,
             args.use_phase_sum_for_total_power,
             args.max_backoff,
+            args.startup_grace,
         ),
         daemon=True,
     )
@@ -1132,9 +1312,11 @@ def main() -> None:
         version=APP_VERSION,
         host=args.host,
         port=args.port,
+        meter_type=meter_mapper.meter_type,
         ha_url=ha_url,
         poll_interval_s=args.poll_interval,
         max_backoff_s=args.max_backoff,
+        startup_grace_s=args.startup_grace,
     )
     log_event(
         logging.INFO,
@@ -1155,7 +1337,7 @@ def main() -> None:
                     event="server_stopping",
                 )
                 break
-            except Exception as exc:
+            except OSError as exc:
                 if stop_event.is_set():
                     break
                 log_event(
