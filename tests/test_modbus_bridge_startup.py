@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 import sys
+import logging
 
 
 def install_dependency_stubs() -> None:
@@ -234,6 +235,175 @@ class PowerFactorCalculationTests(unittest.TestCase):
         with mock.patch.dict(modbus_bridge.os.environ, config, clear=True):
             with self.assertRaisesRegex(ValueError, "total_pf"):
                 modbus_bridge.load_homeassistant_config(Path("missing.yaml"))
+
+
+class PollFailureReporterTests(unittest.TestCase):
+    def test_startup_failures_are_logged_once_at_info_during_grace(self) -> None:
+        reporter = modbus_bridge.PollFailureReporter(
+            startup_grace_s=120.0,
+            transient_log_interval_s=60.0,
+        )
+        failure = modbus_bridge.HomeAssistantConnectivityError("not ready")
+
+        with (
+            mock.patch.object(modbus_bridge.time, "time", side_effect=[0.0, 2.0, 30.0]),
+            mock.patch.object(modbus_bridge, "log_event") as log_event,
+        ):
+            reporter.log_homeassistant_failure(
+                failure,
+                consecutive_failures=1,
+                retry_delay_s=2.0,
+            )
+            reporter.log_homeassistant_failure(
+                failure,
+                consecutive_failures=2,
+                retry_delay_s=4.0,
+            )
+            reporter.log_homeassistant_failure(
+                failure,
+                consecutive_failures=3,
+                retry_delay_s=8.0,
+            )
+
+        log_event.assert_called_once()
+        self.assertEqual(log_event.call_args.args[0], logging.INFO)
+        self.assertEqual(log_event.call_args.kwargs["event"], "ha_poll_waiting")
+
+    def test_persistent_failures_are_escalated_after_startup_grace(self) -> None:
+        reporter = modbus_bridge.PollFailureReporter(
+            startup_grace_s=120.0,
+            transient_log_interval_s=60.0,
+            persistent_log_interval_s=60.0,
+        )
+        failure = modbus_bridge.HomeAssistantError("HTTP 502")
+
+        with (
+            mock.patch.object(modbus_bridge.time, "time", side_effect=[0.0, 30.0, 121.0]),
+            mock.patch.object(modbus_bridge, "log_event") as log_event,
+        ):
+            reporter.log_homeassistant_failure(
+                failure,
+                consecutive_failures=1,
+                retry_delay_s=2.0,
+            )
+            reporter.log_homeassistant_failure(
+                failure,
+                consecutive_failures=2,
+                retry_delay_s=4.0,
+            )
+            reporter.log_homeassistant_failure(
+                failure,
+                consecutive_failures=3,
+                retry_delay_s=8.0,
+            )
+
+        self.assertEqual(log_event.call_count, 2)
+        self.assertEqual(log_event.call_args.args[0], logging.WARNING)
+        self.assertEqual(log_event.call_args.kwargs["event"], "ha_poll_failure")
+        self.assertEqual(log_event.call_args.kwargs["suppressed_failures"], 1)
+
+    def test_recovery_logs_suppressed_failures(self) -> None:
+        reporter = modbus_bridge.PollFailureReporter(
+            startup_grace_s=120.0,
+            transient_log_interval_s=60.0,
+        )
+        failure = modbus_bridge.HomeAssistantConnectivityError("not ready")
+
+        with (
+            mock.patch.object(modbus_bridge.time, "time", side_effect=[0.0, 30.0, 45.0]),
+            mock.patch.object(modbus_bridge, "log_event") as log_event,
+        ):
+            reporter.log_homeassistant_failure(
+                failure,
+                consecutive_failures=1,
+                retry_delay_s=2.0,
+            )
+            reporter.log_homeassistant_failure(
+                failure,
+                consecutive_failures=2,
+                retry_delay_s=4.0,
+            )
+            reporter.log_recovered(consecutive_failures=2)
+
+        self.assertEqual(log_event.call_args.args[0], logging.INFO)
+        self.assertEqual(log_event.call_args.kwargs["event"], "ha_poll_recovered")
+        self.assertEqual(log_event.call_args.kwargs["suppressed_failures"], 1)
+
+
+class MeterRegisterMapperTests(unittest.TestCase):
+    def test_updater_loop_uses_meter_mapper_interface(self) -> None:
+        block = modbus_bridge.LoggingBlock(
+            "HR",
+            0,
+            modbus_bridge.allocate_registers(8),
+        )
+        client = mock.Mock()
+        client.token_fingerprint = "fingerprint"
+        entities = make_config().entities
+        health_state = mock.Mock()
+        reporter = modbus_bridge.PollReporter()
+        stop_event = modbus_bridge.threading.Event()
+        calls = []
+
+        class RecordingMapper(modbus_bridge.MeterRegisterMapper):
+            meter_type = "recording"
+            register_count = 8
+
+            def initialize(
+                self,
+                hr_block: modbus_bridge.LoggingBlock,
+                frequency_hz: float = 50.0,
+            ) -> None:
+                return None
+
+            def update_from_homeassistant(
+                self,
+                hr_block: modbus_bridge.LoggingBlock,
+                ha: modbus_bridge.HomeAssistantClient,
+                entities: modbus_bridge.HomeAssistantEntities,
+                reporter: modbus_bridge.PollReporter,
+                frequency_hz: float = 50.0,
+                use_phase_sum_for_total_power: bool = False,
+                calculate_power_factor: bool = False,
+            ) -> None:
+                calls.append(
+                    (
+                        hr_block,
+                        ha,
+                        entities,
+                        reporter,
+                        frequency_hz,
+                        use_phase_sum_for_total_power,
+                        calculate_power_factor,
+                    )
+                )
+                stop_event.set()
+
+        with mock.patch.dict(modbus_bridge.os.environ, {}, clear=True):
+            modbus_bridge.updater_loop(
+                hr_block=block,
+                ha=client,
+                entities=entities,
+                meter_mapper=RecordingMapper(),
+                health_state=health_state,
+                reporter=reporter,
+                stop_event=stop_event,
+                interval_s=0.01,
+                frequency_hz=60.0,
+                use_phase_sum_for_total_power=True,
+                max_backoff_s=0.01,
+                startup_grace_s=1.0,
+            )
+
+        self.assertEqual(len(calls), 1)
+        self.assertIs(calls[0][0], block)
+        self.assertIs(calls[0][1], client)
+        self.assertIs(calls[0][2], entities)
+        self.assertIs(calls[0][3], reporter)
+        self.assertEqual(calls[0][4], 60.0)
+        self.assertTrue(calls[0][5])
+        self.assertFalse(calls[0][6])
+        health_state.mark_success.assert_called_once()
 
 
 class HomeAssistantRegisterUpdateTests(unittest.TestCase):

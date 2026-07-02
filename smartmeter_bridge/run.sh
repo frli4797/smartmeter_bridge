@@ -61,6 +61,8 @@ args=(
     "$(bashio::config 'poll_interval')"
     "--grid-frequency"
     "$(bashio::config 'grid_frequency')"
+    "--startup-grace"
+    "$(bashio::config 'startup_grace')"
 )
 
 if bashio::config.true 'use_phase_sum_for_total_power'; then
