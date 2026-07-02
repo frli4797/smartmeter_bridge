@@ -454,7 +454,7 @@ class HomeAssistantRegisterUpdateTests(unittest.TestCase):
         self.assertEqual(block.getValues(modbus_bridge.idx(0), 2), [0, 0])
         self.assertEqual(block.getValues(modbus_bridge.idx(60), 2), [0, 0])
 
-    def test_unavailable_required_values_disable_modbus_reads(self) -> None:
+    def test_unavailable_required_values_keep_serving_default_modbus_reads(self) -> None:
         block = self.make_block()
         client = self.make_client(
             self.make_states(**{"sensor.total_power_w": "unavailable"})
@@ -468,8 +468,7 @@ class HomeAssistantRegisterUpdateTests(unittest.TestCase):
                 reporter=modbus_bridge.PollReporter(),
             )
 
-        with self.assertRaises(ValueError):
-            block.getValues(modbus_bridge.idx(0), 2)
+        self.assertEqual(block.getValues(modbus_bridge.idx(0), 2), [0, 0])
 
     def test_modbus_reads_resume_after_unavailable_value_recovers(self) -> None:
         block = self.make_block()
@@ -483,8 +482,7 @@ class HomeAssistantRegisterUpdateTests(unittest.TestCase):
                 entities=make_config().entities,
                 reporter=modbus_bridge.PollReporter(),
             )
-        with self.assertRaises(ValueError):
-            block.getValues(modbus_bridge.idx(0), 2)
+        self.assertEqual(block.getValues(modbus_bridge.idx(0), 2), [0, 0])
 
         states["sensor.total_power_w"] = "1200"
         modbus_bridge.update_em420_registers_from_ha(

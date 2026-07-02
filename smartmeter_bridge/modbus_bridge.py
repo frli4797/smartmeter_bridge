@@ -486,8 +486,6 @@ class LoggingBlock(ModbusSequentialDataBlock):
 
     def getValues(self, address: int, count: int = 1) -> list[int]:  # pylint: disable=invalid-name
         self._log_external_access("read", address, count)
-        if not self._serving_enabled:
-            raise ValueError(self._serving_unavailable_reason)
         try:
             values = super().getValues(address, count)
         except Exception as exc:
@@ -514,6 +512,10 @@ class LoggingBlock(ModbusSequentialDataBlock):
                 address=address,
                 count=count,
                 returned_count=len(values),
+                serving_enabled=self._serving_enabled,
+                unavailable_reason=self._serving_unavailable_reason
+                if not self._serving_enabled
+                else None,
             )
         return values
 
