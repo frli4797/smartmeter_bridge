@@ -1,20 +1,23 @@
+# syntax=docker/dockerfile:1.7
 ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
 WORKDIR /app
 
-ARG BUILD_VERSION=dev
-
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV APP_VERSION=${BUILD_VERSION}
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 ENV HEALTH_STATUS_PATH=/tmp/smartmeter-faker-health.json
 ENV HEALTHCHECK_MAX_AGE_SECONDS=30
 
 RUN apk add --no-cache python3 py3-pip
 
 COPY requirements.txt ./
-RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip3 install --break-system-packages -r requirements.txt
+
+ARG BUILD_VERSION=dev
+ENV APP_VERSION=${BUILD_VERSION}
 
 COPY modbus_bridge.py ./
 COPY healthcheck.py ./
