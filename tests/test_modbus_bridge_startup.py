@@ -1,3 +1,4 @@
+import json
 import tempfile
 import types
 import unittest
@@ -75,6 +76,25 @@ def install_dependency_stubs() -> None:
 install_dependency_stubs()
 
 from smartmeter_bridge import modbus_bridge
+
+
+class JsonFormatterTests(unittest.TestCase):
+    def test_log_payload_includes_victorialogs_message_field(self) -> None:
+        formatter = modbus_bridge.JsonFormatter()
+        record = logging.LogRecord(
+            "ha_em420",
+            logging.INFO,
+            __file__,
+            1,
+            "Home Assistant polling healthy",
+            (),
+            None,
+        )
+
+        payload = json.loads(formatter.format(record))
+
+        self.assertEqual(payload["_msg"], "Home Assistant polling healthy")
+        self.assertEqual(payload["message"], "Home Assistant polling healthy")
 
 
 def make_config() -> modbus_bridge.HomeAssistantConfig:
