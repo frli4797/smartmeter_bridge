@@ -39,6 +39,7 @@ class JsonFormatter(logging.Formatter):
             "timestamp": self.formatTime(record, self.datefmt),
             "level": record.levelname,
             "logger": record.name,
+            "_msg": record.getMessage(),
             "message": record.getMessage(),
         }
         event_fields = getattr(record, "event_fields", None)
